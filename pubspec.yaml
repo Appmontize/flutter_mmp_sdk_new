@@ -1,0 +1,40 @@
+name: flutter_mmp_sdk
+description: "A Flutter plugin for MMP integration across multiple platforms."
+version: 1.0.0
+homepage: https://github.com/Appmontize/flutter-mmp-sdk.git # Replace with your repository or project URL.
+publish_to: none
+
+environment:
+  sdk: ">=3.5.4 <4.0.0" # Added upper bound for SDK constraint.
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  web: ^0.5.1
+  plugin_platform_interface: ^2.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.example.flutter_mmp_sdk
+        pluginClass: FlutterMmpSdkPlugin
+      ios:
+        pluginClass: FlutterMmpSdkPlugin
+      linux:
+        pluginClass: FlutterMmpSdkPlugin
+      macos:
+        pluginClass: FlutterMmpSdkPlugin
+      windows:
+        pluginClass: FlutterMmpSdkPluginCApi
+      web:
+        pluginClass: FlutterMmpSdkWeb
+        fileName: flutter_mmp_sdk_web.dart
