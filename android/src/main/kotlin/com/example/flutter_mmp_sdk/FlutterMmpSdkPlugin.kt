@@ -137,7 +137,10 @@ object HttpHelper {
 
     fun post(url: String, params: Map<String, String>) {
         val formBody = FormBody.Builder().apply {
-            params.forEach { (key, value) -> add(key, value) }
+            params.forEach { (key, value) -> 
+                Log.d("HttpHelper", "POST Parameter: $key = $value") // Log each parameter
+                add(key, value) 
+            }
         }.build()
 
         val request = Request.Builder()
@@ -145,20 +148,28 @@ object HttpHelper {
             .post(formBody)
             .build()
 
+        Log.d("HttpHelper", "Sending POST request to: $url")
+
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.e("HttpHelper", "HTTP Request Failed: ${e.message}")
+                e.printStackTrace()
             }
 
             override fun onResponse(call: Call, response: Response) {
                 response.use {
+                    val responseBody = it.body?.string()
+                    Log.d("HttpHelper", "HTTP Response Code: ${it.code}")
+                    Log.d("HttpHelper", "HTTP Response Body: $responseBody")
+                    
                     if (!it.isSuccessful) {
-                        Log.e("HttpHelper", "HTTP Request Failed: Code ${it.code}")
+                        Log.e("HttpHelper", "HTTP Request Failed with Code: ${it.code}")
                     } else {
-                        Log.d("HttpHelper", "HTTP Response: ${it.body?.string()}")
+                        Log.d("HttpHelper", "HTTP Request Successful!")
                     }
                 }
             }
         })
     }
 }
+
