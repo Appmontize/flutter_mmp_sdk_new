@@ -10,12 +10,12 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import okhttp3.*
-import org.json.JSONObject
 import java.io.IOException
 
 class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private lateinit var applicationContext: Context
     private lateinit var channel: MethodChannel
+    private var baseUrl: String = "https://magnetcents.co.in/mmpsdk"
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         applicationContext = binding.applicationContext
@@ -37,12 +37,12 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 val eventType = call.argument<String>("eventType")
                 val clickId = call.argument<String>("clickId")
                 val tid = call.argument<String>("tid")
-                if (eventType != null && clickId != null && tid != null) {
+                if (!eventType.isNullOrEmpty() && !clickId.isNullOrEmpty() && !tid.isNullOrEmpty()) {
                     trackEvent(eventType, clickId, tid)
+                    result.success("Event tracked successfully")
                 } else {
                     result.error("INVALID_ARGUMENTS", "Missing eventType, clickId, or tid", null)
                 }
-                result.success(null)
             }
             else -> result.notImplemented()
         }
@@ -54,37 +54,43 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         try {
             referrerClient.startConnection(object : InstallReferrerStateListener {
                 override fun onInstallReferrerSetupFinished(responseCode: Int) {
-                    if (responseCode == InstallReferrerClient.InstallReferrerResponse.OK) {
-                        val response: ReferrerDetails = referrerClient.installReferrer
-                        val referrerUrl = response.installReferrer
-                        Log.d("FlutterMmpSdk", "Install Referrer URL: $referrerUrl")
+                    when (responseCode) {
+                        InstallReferrerClient.InstallReferrerResponse.OK -> {
+                            val response: ReferrerDetails = referrerClient.installReferrer
+                            val referrerUrl = response.installReferrer
+                            Log.d("FlutterMmpSdk", "Install Referrer URL: $referrerUrl")
 
-                        val params = referrerUrl.split("&").associate {
-                            val keyValue = it.split("=")
-                            keyValue[0] to keyValue.getOrNull(1).orEmpty()
+                            // Parse the referrer URL
+                            val uri = android.net.Uri.parse("https://?$referrerUrl")
+                            val clickId = uri.getQueryParameter("click_id")
+                            val tid = uri.getQueryParameter("tid")
+
+                            Log.d("FlutterMmpSdk", "Parsed Click ID: $clickId, TID: $tid")
+
+                            if (!clickId.isNullOrEmpty() && !tid.isNullOrEmpty()) {
+                                sendInstallationData(clickId, tid)
+                            } else {
+                                Log.e("FlutterMmpSdk", "Referrer URL missing click_id or tid")
+                            }
                         }
-
-                        val clickId = params["referrer"]?.split(",")?.getOrNull(0)
-                        val tid = params["referrer"]?.split(",")?.getOrNull(1)
-
-                        Log.d("FlutterMmpSdk", "Parsed Click ID: $clickId, TID: $tid")
-
-                        if (clickId != null && tid != null) {
-                            sendInstallationData(clickId, tid)
-                        } else {
-                            Log.e("FlutterMmpSdk", "Missing clickId or tid in referrer")
+                        InstallReferrerClient.InstallReferrerResponse.FEATURE_NOT_SUPPORTED -> {
+                            Log.e("FlutterMmpSdk", "Install Referrer API not supported on this device")
                         }
-                    } else {
-                        Log.e("FlutterMmpSdk", "Install Referrer Setup Failed: Response Code $responseCode")
+                        InstallReferrerClient.InstallReferrerResponse.SERVICE_UNAVAILABLE -> {
+                            Log.e("FlutterMmpSdk", "Install Referrer Service unavailable")
+                        }
+                        else -> {
+                            Log.e("FlutterMmpSdk", "Unexpected response code: $responseCode")
+                        }
                     }
                 }
 
                 override fun onInstallReferrerServiceDisconnected() {
-                    Log.w("FlutterMmpSdk", "Install Referrer Service Disconnected.")
+                    Log.w("FlutterMmpSdk", "Install Referrer Service disconnected")
                 }
             })
         } catch (e: Exception) {
-            Log.e("FlutterMmpSdk", "Failed to initialize Install Referrer: ${e.message}")
+            Log.e("FlutterMmpSdk", "Error initializing Install Referrer: ${e.message}")
         }
     }
 
@@ -94,10 +100,10 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "tid" to tid,
             "device_model" to Build.MODEL,
             "android_version" to Build.VERSION.RELEASE,
-            "advertising_id" to getAdvertisingId() // Optional, can be implemented separately
+            "advertising_id" to getAdvertisingId()
         )
 
-        HttpHelper.post("https://magnetcents.co.in/mmpsdk/store_install.php", params)
+        HttpHelper.post("$baseUrl/store_install.php", params)
     }
 
     private fun trackEvent(eventType: String, clickId: String, tid: String) {
@@ -106,11 +112,11 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "click_id" to clickId,
             "tid" to tid
         )
-        HttpHelper.post("https://magnetcents.co.in/mmpsdk/store_event.php", params)
+        HttpHelper.post("$baseUrl/store_event.php", params)
     }
 
     private fun getAdvertisingId(): String {
-        // Implement advertising ID retrieval if necessary
+        // Placeholder for Google Play Services Advertising ID
         return "unknown"
     }
 }
@@ -131,7 +137,6 @@ object HttpHelper {
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.e("HttpHelper", "HTTP Request Failed: ${e.message}")
-                e.printStackTrace()
             }
 
             override fun onResponse(call: Call, response: Response) {
