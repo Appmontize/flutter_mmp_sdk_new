@@ -60,17 +60,28 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                             val referrerUrl = response.installReferrer
                             Log.d("FlutterMmpSdk", "Install Referrer URL: $referrerUrl")
 
-                            // Parse the referrer URL
+                            // Correctly parse the referrer key
                             val uri = android.net.Uri.parse("https://?$referrerUrl")
-                            val clickId = uri.getQueryParameter("click_id")
-                            val tid = uri.getQueryParameter("tid")
+                            val referrerString = uri.getQueryParameter("referrer")
+                            Log.d("FlutterMmpSdk", "Referrer String: $referrerString")
+
+                            // Extract click_id and tid from the referrer value
+                            var clickId: String? = null
+                            var tid: String? = null
+
+                            if (!referrerString.isNullOrEmpty()) {
+                                val referrerParams = referrerString.split(",")
+                                clickId = referrerParams.getOrNull(0)
+                                tid = referrerParams.getOrNull(1)
+                            }
 
                             Log.d("FlutterMmpSdk", "Parsed Click ID: $clickId, TID: $tid")
 
+                            // Send install data if clickId and tid are valid
                             if (!clickId.isNullOrEmpty() && !tid.isNullOrEmpty()) {
                                 sendInstallationData(clickId, tid)
                             } else {
-                                Log.e("FlutterMmpSdk", "Referrer URL missing click_id or tid")
+                                Log.e("FlutterMmpSdk", "Missing clickId or tid in referrer")
                             }
                         }
                         InstallReferrerClient.InstallReferrerResponse.FEATURE_NOT_SUPPORTED -> {
