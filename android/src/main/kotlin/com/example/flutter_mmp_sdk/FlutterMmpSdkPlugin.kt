@@ -77,9 +77,11 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
                             Log.d("FlutterMmpSdk", "Parsed Click ID: $clickId, TID: $tid")
 
-                            // Send install data if clickId and tid are valid
+                            // Log before calling sendInstallationData
                             if (!clickId.isNullOrEmpty() && !tid.isNullOrEmpty()) {
+                                Log.d("FlutterMmpSdk", "Calling sendInstallationData with Click ID: $clickId and TID: $tid")
                                 sendInstallationData(clickId, tid)
+                                Log.d("FlutterMmpSdk", "sendInstallationData called successfully.")
                             } else {
                                 Log.e("FlutterMmpSdk", "Missing clickId or tid in referrer")
                             }
@@ -104,6 +106,7 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             Log.e("FlutterMmpSdk", "Error initializing Install Referrer: ${e.message}")
         }
     }
+
 
     private fun sendInstallationData(clickId: String, tid: String) {
         val params = mapOf(
@@ -131,7 +134,6 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         return "unknown"
     }
 }
-
 object HttpHelper {
     private val client = OkHttpClient()
 
@@ -173,4 +175,3 @@ object HttpHelper {
         })
     }
 }
-
