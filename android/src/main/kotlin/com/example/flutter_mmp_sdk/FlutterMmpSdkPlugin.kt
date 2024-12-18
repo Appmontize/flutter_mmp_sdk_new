@@ -1,4 +1,3 @@
-
 package com.example.flutter_mmp_sdk
 
 import android.content.Context
@@ -16,6 +15,7 @@ import java.io.IOException
 class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
   private lateinit var applicationContext: Context
   private lateinit var channel: MethodChannel
+  private var baseUrl: String = "https://magnetcents.co.in/mmpsdk"
 
   override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     applicationContext = binding.applicationContext
@@ -37,10 +37,12 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val eventType = call.argument<String>("eventType")
         val clickId = call.argument<String>("clickId")
         val tid = call.argument<String>("tid")
-        if (eventType != null && clickId != null && tid != null) {
+        if (!eventType.isNullOrEmpty() && !clickId.isNullOrEmpty() && !tid.isNullOrEmpty()) {
           trackEvent(eventType, clickId, tid)
+          result.success("Event tracked successfully")
+        } else {
+          result.error("INVALID_ARGUMENTS", "Missing eventType, clickId, or tid", null)
         }
-        result.success(null)
       }
       else -> result.notImplemented()
     }
@@ -49,43 +51,102 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
   private fun initializeSdk() {
     val referrerClient = InstallReferrerClient.newBuilder(applicationContext).build()
 
-    referrerClient.startConnection(object : InstallReferrerStateListener {
-      override fun onInstallReferrerSetupFinished(responseCode: Int) {
-        if (responseCode == InstallReferrerClient.InstallReferrerResponse.OK) {
-          val response: ReferrerDetails = referrerClient.installReferrer
-          val referrerUrl = response.installReferrer
-          val params = referrerUrl.split("&").associate {
-            val keyValue = it.split("=")
-            keyValue[0] to keyValue.getOrNull(1).orEmpty()
+    try {
+      Log.d("FlutterMmpSdk", "Starting Install Referrer Client connection...")
+      referrerClient.startConnection(object : InstallReferrerStateListener {
+        override fun onInstallReferrerSetupFinished(responseCode: Int) {
+          Log.d("FlutterMmpSdk", "Install Referrer Setup Finished with response code: $responseCode")
+
+          when (responseCode) {
+            InstallReferrerClient.InstallReferrerResponse.OK -> {
+              val response: ReferrerDetails = referrerClient.installReferrer
+              val referrerUrl = response.installReferrer
+              Log.d("FlutterMmpSdk", "Install Referrer URL: $referrerUrl")
+
+              // Parsing referrer data
+              val uri = android.net.Uri.parse("https://?$referrerUrl")
+              val referrerString = uri.getQueryParameter("referrer")
+              Log.d("FlutterMmpSdk", "Parsed Referrer String: $referrerString")
+
+              var clickId: String? = null
+              var tid: String? = null
+
+              if (!referrerString.isNullOrEmpty()) {
+                val referrerParams = referrerString.split(",")
+                clickId = referrerParams.getOrNull(0)
+                tid = referrerParams.getOrNull(1)
+              }
+
+              Log.d("FlutterMmpSdk", "Parsed Click ID: $clickId, TID: $tid")
+
+              if (!clickId.isNullOrEmpty() && !tid.isNullOrEmpty()) {
+                Log.d("FlutterMmpSdk", "Calling sendInstallationData...")
+                sendInstallationData(clickId, tid)
+              } else {
+                Log.e("FlutterMmpSdk", "Missing Click ID or TID.")
+              }
+            }
+            InstallReferrerClient.InstallReferrerResponse.FEATURE_NOT_SUPPORTED -> {
+              Log.e("FlutterMmpSdk", "Install Referrer API not supported on this device.")
+            }
+            InstallReferrerClient.InstallReferrerResponse.SERVICE_UNAVAILABLE -> {
+              Log.e("FlutterMmpSdk", "Install Referrer Service unavailable.")
+            }
+            else -> {
+              Log.e("FlutterMmpSdk", "Unexpected response code: $responseCode")
+            }
           }
+        }
 
-          val clickId = params["referrer"]?.split(",")?.getOrNull(0)
-          val tid = params["referrer"]?.split(",")?.getOrNull(1)
+        override fun onInstallReferrerServiceDisconnected() {
+          Log.w("FlutterMmpSdk", "Install Referrer Service disconnected.")
+        }
+      })
+    } catch (e: Exception) {
+      Log.e("FlutterMmpSdk", "Error during Install Referrer initialization: ${e.message}")
+    }
+  }
+  private fun sendInstallationData(clickId: String, tid: String) {
+    Log.d("FlutterMmpSdk", "Preparing to send installation data...")
 
-          Log.d("FlutterMmpSdk", "Click ID: $clickId, TID: $tid")
+    val url = "$baseUrl/store_install.php"
+    val client = OkHttpClient()
 
-          if (clickId != null && tid != null) {
-            sendInstallationData(clickId, tid)
+    val formBody = FormBody.Builder()
+      .add("click_id", clickId)
+      .add("tid", tid)
+      .add("device_model", Build.MODEL)
+      .add("android_version", Build.VERSION.RELEASE)
+      .add("advertising_id", getAdvertisingId())
+      .build()
+
+    val request = Request.Builder()
+      .url(url)
+      .addHeader("Content-Type", "application/x-www-form-urlencoded")
+      .post(formBody)
+      .build()
+
+    Log.d("FlutterMmpSdk", "Sending POST request to: $url with data: click_id=$clickId, tid=$tid")
+
+    client.newCall(request).enqueue(object : Callback {
+      override fun onFailure(call: Call, e: IOException) {
+        Log.e("FlutterMmpSdk", "HTTP Request Failed: ${e.message}")
+      }
+
+      override fun onResponse(call: Call, response: Response) {
+        response.use {
+          val responseBody = it.body?.string()
+          Log.d("FlutterMmpSdk", "HTTP Response Code: ${it.code}")
+          Log.d("FlutterMmpSdk", "HTTP Response Body: $responseBody")
+
+          if (!it.isSuccessful) {
+            Log.e("FlutterMmpSdk", "HTTP Request Failed with Code: ${it.code}")
+          } else {
+            Log.d("FlutterMmpSdk", "HTTP Request Successful! Data stored on server.")
           }
-        } else {
-          Log.e("FlutterMmpSdk", "Install Referrer Setup Failed: Response Code $responseCode")
         }
       }
-
-      override fun onInstallReferrerServiceDisconnected() {
-        Log.w("FlutterMmpSdk", "Install Referrer Service Disconnected.")
-      }
     })
-  }
-
-  private fun sendInstallationData(clickId: String, tid: String) {
-    val params = mapOf(
-      "click_id" to clickId,
-      "tid" to tid,
-      "device_model" to Build.MODEL,
-      "android_version" to Build.VERSION.RELEASE
-    )
-    HttpHelper.post("https://magnetcents.co.in/mmpsdk/store_install.php", params)
   }
 
   private fun trackEvent(eventType: String, clickId: String, tid: String) {
@@ -94,22 +155,32 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
       "click_id" to clickId,
       "tid" to tid
     )
-    HttpHelper.post("https://magnetcents.co.in/mmpsdk/store_event.php", params)
+    HttpHelper.post("$baseUrl/store_event.php", params)
+  }
+
+  private fun getAdvertisingId(): String {
+    // Placeholder for Google Play Services Advertising ID
+    return "unknown"
   }
 }
-
 object HttpHelper {
   private val client = OkHttpClient()
 
   fun post(url: String, params: Map<String, String>) {
     val formBody = FormBody.Builder().apply {
-      params.forEach { (key, value) -> add(key, value) }
+      params.forEach { (key, value) ->
+        Log.d("HttpHelper", "POST Parameter: $key = $value") // Log each parameter
+        add(key, value)
+      }
     }.build()
 
     val request = Request.Builder()
       .url(url)
+      .addHeader("Content-Type", "application/x-www-form-urlencoded")
       .post(formBody)
       .build()
+
+    Log.d("HttpHelper", "Sending POST request to: $url with parameters $params")
 
     client.newCall(request).enqueue(object : Callback {
       override fun onFailure(call: Call, e: IOException) {
@@ -119,10 +190,14 @@ object HttpHelper {
 
       override fun onResponse(call: Call, response: Response) {
         response.use {
+          val responseBody = it.body?.string()
+          Log.d("HttpHelper", "HTTP Response Code: ${it.code}")
+          Log.d("HttpHelper", "HTTP Response Body: $responseBody")
+
           if (!it.isSuccessful) {
-            Log.e("HttpHelper", "HTTP Request Failed: Code ${it.code}")
+            Log.e("HttpHelper", "HTTP Request Failed with Code: ${it.code}")
           } else {
-            Log.d("HttpHelper", "HTTP Response: ${it.body?.string()}")
+            Log.d("HttpHelper", "HTTP Request Successful!")
           }
         }
       }
