@@ -16,6 +16,8 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
   private lateinit var applicationContext: Context
   private lateinit var channel: MethodChannel
   private var baseUrl: String = "https://magnetcents.co.in/mmpsdk"
+  private var referrerClickId: String? = null
+  private var referrerTid: String? = null
 
   override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     applicationContext = binding.applicationContext
@@ -35,18 +37,18 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
       }
       "trackEvent" -> {
         val eventType = call.argument<String>("eventType")
-        val clickId = call.argument<String>("clickId")
-        val tid = call.argument<String>("tid")
-        if (!eventType.isNullOrEmpty() && !clickId.isNullOrEmpty() && !tid.isNullOrEmpty()) {
-          trackEvent(eventType, clickId, tid)
+        if (!eventType.isNullOrEmpty()) {
+          trackEvent(eventType)
           result.success("Event tracked successfully")
         } else {
-          result.error("INVALID_ARGUMENTS", "Missing eventType, clickId, or tid", null)
+          Log.e("FlutterMmpSdk", "Missing eventType.")
+          result.error("INVALID_ARGUMENTS", "Missing eventType", null)
         }
       }
       else -> result.notImplemented()
     }
   }
+
 
   private fun initializeSdk() {
     val referrerClient = InstallReferrerClient.newBuilder(applicationContext).build()
@@ -63,25 +65,20 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
               val referrerUrl = response.installReferrer
               Log.d("FlutterMmpSdk", "Install Referrer URL: $referrerUrl")
 
-              // Parsing referrer data
               val uri = android.net.Uri.parse("https://?$referrerUrl")
               val referrerString = uri.getQueryParameter("referrer")
               Log.d("FlutterMmpSdk", "Parsed Referrer String: $referrerString")
 
-              var clickId: String? = null
-              var tid: String? = null
-
               if (!referrerString.isNullOrEmpty()) {
                 val referrerParams = referrerString.split(",")
-                clickId = referrerParams.getOrNull(0)
-                tid = referrerParams.getOrNull(1)
+                referrerClickId = referrerParams.getOrNull(0)
+                referrerTid = referrerParams.getOrNull(1)
               }
 
-              Log.d("FlutterMmpSdk", "Parsed Click ID: $clickId, TID: $tid")
+              Log.d("FlutterMmpSdk", "Parsed Click ID: $referrerClickId, TID: $referrerTid")
 
-              if (!clickId.isNullOrEmpty() && !tid.isNullOrEmpty()) {
-                Log.d("FlutterMmpSdk", "Calling sendInstallationData...")
-                sendInstallationData(clickId, tid)
+              if (!referrerClickId.isNullOrEmpty() && !referrerTid.isNullOrEmpty()) {
+                sendInstallationData(referrerClickId!!, referrerTid!!)
               } else {
                 Log.e("FlutterMmpSdk", "Missing Click ID or TID.")
               }
@@ -106,6 +103,7 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
       Log.e("FlutterMmpSdk", "Error during Install Referrer initialization: ${e.message}")
     }
   }
+
   private fun sendInstallationData(clickId: String, tid: String) {
     Log.d("FlutterMmpSdk", "Preparing to send installation data...")
 
@@ -142,25 +140,65 @@ class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
           if (!it.isSuccessful) {
             Log.e("FlutterMmpSdk", "HTTP Request Failed with Code: ${it.code}")
           } else {
-            Log.d("FlutterMmpSdk", "HTTP Request Successful! Data stored on server.")
+            Log.d("FlutterMmpSdk", "Installation Data Successfully Sent!")
           }
         }
       }
     })
   }
 
-  private fun trackEvent(eventType: String, clickId: String, tid: String) {
-    val params = mapOf(
-      "event_type" to eventType,
-      "click_id" to clickId,
-      "tid" to tid
-    )
-    HttpHelper.post("$baseUrl/store_event.php", params)
+  private fun trackEvent(eventType: String) {
+    if (referrerClickId.isNullOrEmpty() || referrerTid.isNullOrEmpty()) {
+      Log.e("FlutterMmpSdk", "Cannot track event. Missing Click ID or TID.")
+      return
+    }
+
+    Log.d("FlutterMmpSdk", "Preparing to track event...")
+
+    val url = "$baseUrl/store_event.php"
+    val client = OkHttpClient()
+
+    // Build the request body
+    val formBody = FormBody.Builder()
+      .add("event_type", eventType)
+      .add("click_id", referrerClickId!!)
+      .add("tid", referrerTid!!)
+      .build()
+
+    // Create the HTTP request
+    val request = Request.Builder()
+      .url(url)
+      .addHeader("Content-Type", "application/x-www-form-urlencoded")
+      .post(formBody)
+      .build()
+
+    Log.d("FlutterMmpSdk", "Sending POST request to: $url with data: event_type=$eventType, click_id=$referrerClickId, tid=$referrerTid")
+
+    // Execute the HTTP request
+    client.newCall(request).enqueue(object : Callback {
+      override fun onFailure(call: Call, e: IOException) {
+        Log.e("FlutterMmpSdk", "HTTP Request Failed: ${e.message}")
+      }
+
+      override fun onResponse(call: Call, response: Response) {
+        response.use {
+          val responseBody = it.body?.string()
+          Log.d("FlutterMmpSdk", "HTTP Response Code: ${it.code}")
+          Log.d("FlutterMmpSdk", "HTTP Response Body: $responseBody")
+
+          if (!it.isSuccessful) {
+            Log.e("FlutterMmpSdk", "HTTP Request Failed with Code: ${it.code}")
+          } else {
+            Log.d("FlutterMmpSdk", "Event Data Successfully Sent!")
+          }
+        }
+      }
+    })
   }
 
+
   private fun getAdvertisingId(): String {
-    // Placeholder for Google Play Services Advertising ID
-    return "unknown"
+    return "unknown" // Placeholder for Advertising ID logic
   }
 }
 object HttpHelper {
@@ -169,7 +207,7 @@ object HttpHelper {
   fun post(url: String, params: Map<String, String>) {
     val formBody = FormBody.Builder().apply {
       params.forEach { (key, value) ->
-        Log.d("HttpHelper", "POST Parameter: $key = $value") // Log each parameter
+        Log.d("HttpHelper", "POST Parameter: $key = $value")
         add(key, value)
       }
     }.build()
@@ -197,7 +235,7 @@ object HttpHelper {
           if (!it.isSuccessful) {
             Log.e("HttpHelper", "HTTP Request Failed with Code: ${it.code}")
           } else {
-            Log.d("HttpHelper", "HTTP Request Successful!")
+            Log.d("HttpHelper", "Event Data Successfully Sent!")
           }
         }
       }
