@@ -10,29 +10,17 @@ class FlutterMmpSdk {
   }
 
   /// Track `registered_now` event
-  static Future<void> registeredNow(String clickId, String tid) async {
-    await _channel.invokeMethod('trackEvent', {
-      'eventType': 'registered_now',
-      'clickId': clickId,
-      'tid': tid,
-    });
+  static Future<void> registeredNow() async {
+    await _channel.invokeMethod('trackEvent', {'eventType': 'registered_now'});
   }
 
   /// Track `subscribed` event
-  static Future<void> subscribed(String clickId, String tid) async {
-    await _channel.invokeMethod('trackEvent', {
-      'eventType': 'subscribed',
-      'clickId': clickId,
-      'tid': tid,
-    });
+  static Future<void> subscribed() async {
+    await _channel.invokeMethod('trackEvent', {'eventType': 'subscribed'});
   }
 
   /// Track `completed` event
-  static Future<void> completed(String clickId, String tid) async {
-    await _channel.invokeMethod('trackEvent', {
-      'eventType': 'completed',
-      'clickId': clickId,
-      'tid': tid,
-    });
+  static Future<void> trial() async {
+    await _channel.invokeMethod('trackEvent', {'eventType': 'trial'});
   }
 }
