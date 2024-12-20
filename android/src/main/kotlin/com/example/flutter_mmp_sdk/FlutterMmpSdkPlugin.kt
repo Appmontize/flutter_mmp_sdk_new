@@ -15,7 +15,7 @@ import java.io.IOException
 class FlutterMmpSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
   private lateinit var applicationContext: Context
   private lateinit var channel: MethodChannel
-  private var baseUrl: String = "https://magnetcents.co.in/mmpsdk"
+  private var baseUrl: String = "https://campaign.lokivpn.com"
   private var referrerClickId: String? = null
   private var referrerTid: String? = null
 
